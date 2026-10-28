@@ -5,6 +5,7 @@ import { createJSONStorage, persist, type StateStorage } from 'zustand/middlewar
 import { DEMO_TODAY, SAMPLE_EVIDENCE, seedAgents, seedCases } from '@/data/seed';
 import {
   CAUSE_INFO,
+  SWITCH_LABEL,
   advanceBasis,
   applyOutcome,
   evaluateCase,
@@ -13,7 +14,10 @@ import {
   type Case,
   type LapseCause,
   type Outcome,
+  type SwitchType,
 } from './rules';
+
+export type TryKind = 'lapse' | 'clean' | 'switch' | 'request';
 
 export interface LogEntry {
   id: number;
@@ -27,7 +31,7 @@ interface AppState {
   seq: number;
   /** Applies a pending case and returns its outcome. */
   applyCase: (caseId: string) => Outcome | null;
-  addTryCase: (agentId: string, kind: 'lapse' | 'clean' | 'replacement', cause?: LapseCause, requestedTraining?: boolean) => string | null;
+  addTryCase: (agentId: string, kind: TryKind, opts?: { cause?: LapseCause; requestedTraining?: boolean; switchType?: SwitchType }) => string | null;
   setCause: (caseId: string, cause: LapseCause) => void;
   addLog: (text: string) => void;
   reset: () => void;
@@ -80,8 +84,8 @@ export const useStore = create<AppState>()(
         const o = evaluateCase(a, c);
         const next = applyOutcome(a, o);
         const lines: string[] = [];
-        if (c.kind === 'replacement') {
-          c.items.forEach((i) => lines.push(`Replacement rule applied for ${a.firstName}: ${i.oldPolicy} → ${i.newPolicy}`));
+        if (c.kind === 'switch') {
+          c.items.forEach((i) => lines.push(`Policy-switch rule applied for ${a.firstName} (${SWITCH_LABEL[i.type].toLowerCase()}): ${i.oldPolicy} → ${i.newPolicy}`));
         }
         const moved = o.from.standing !== o.to.standing || o.from.voluntary !== o.to.voluntary;
         const why = CAUSE_INFO[o.tag].label;
@@ -99,7 +103,8 @@ export const useStore = create<AppState>()(
         return o;
       },
 
-      addTryCase: (agentId, kind, cause = 'skill', requestedTraining = false) => {
+      addTryCase: (agentId, kind, opts = {}) => {
+        const { cause = 'skill', requestedTraining = false, switchType = 'replacement' } = opts;
         const { agents, cases, seq, log } = get();
         const a = agents[agentId];
         if (!a || a.standing === 'terminated') return null;
@@ -128,16 +133,28 @@ export const useStore = create<AppState>()(
             evidence: SAMPLE_EVIDENCE.clean,
           };
           text = `Try it: clean policy added for ${a.firstName} (${p})`;
-        } else {
+        } else if (kind === 'switch') {
           const oldP = pol();
           const newP = pol();
+          const downgrade = switchType === 'downgrade';
           c = {
             id, agentId, kind, date: DEMO_TODAY, simulated: true,
-            title: `Replacement ${oldP} → ${newP}`, summary: `A customer cancelled ${oldP} and bought ${newP} from ${a.firstName}.`,
-            items: [{ oldPolicy: oldP, newPolicy: newP, monthsInForce: 6, basis }],
-            evidence: SAMPLE_EVIDENCE.replacement,
+            title: `${SWITCH_LABEL[switchType]} ${oldP} → ${newP}`,
+            summary: downgrade
+              ? `Check-ins showed the customer struggling to pay; ${a.firstName} moved them from ${oldP} to a cheaper policy, ${newP}.`
+              : `A customer cancelled ${oldP} and bought ${newP} from ${a.firstName}.`,
+            items: [{ type: switchType, oldPolicy: oldP, newPolicy: newP, monthsInForce: 4, basis }],
+            evidence: SAMPLE_EVIDENCE[switchType],
           };
-          text = `Try it: replacement added for ${a.firstName} (${oldP} → ${newP})`;
+          text = `Try it: policy switch added for ${a.firstName} (${SWITCH_LABEL[switchType].toLowerCase()}, ${oldP} → ${newP})`;
+        } else {
+          if (a.standing === 'training') return null;
+          c = {
+            id, agentId, kind, date: DEMO_TODAY, simulated: true,
+            title: 'Training request', summary: `${a.firstName} has asked for training.`,
+            evidence: SAMPLE_EVIDENCE.request,
+          };
+          text = `Try it: ${a.firstName} asked for training`;
         }
         set({
           agents: { ...agents, [agentId]: { ...a, nextPolicyNo: no } },
@@ -167,7 +184,7 @@ export const useStore = create<AppState>()(
       reset: () => set(seedState()),
     }),
     {
-      name: 'ethos-agent-quality-v1',
+      name: 'ethos-agent-quality-v2',
       storage: createJSONStorage(() => safeStorage),
       skipHydration: true,
       partialize: (s) => ({ agents: s.agents, cases: s.cases, log: s.log, seq: s.seq }),

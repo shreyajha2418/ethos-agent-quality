@@ -12,7 +12,8 @@ export const CAUSE_COLOR: Record<EventTag, { dot: string; chip: string }> = {
   oversold: { dot: 'bg-c-oversold', chip: 'bg-c-oversold/10 border-c-oversold/40' },
   ignored: { dot: 'bg-c-ignored', chip: 'bg-c-ignored/10 border-c-ignored/40' },
   inconclusive: { dot: 'bg-c-inconclusive', chip: 'bg-c-inconclusive/10 border-c-inconclusive/40' },
-  replacement: { dot: 'bg-c-replacement', chip: 'bg-c-replacement/10 border-c-replacement/40' },
+  switch: { dot: 'bg-c-replacement', chip: 'bg-c-replacement/10 border-c-replacement/40' },
+  request: { dot: 'bg-c-team', chip: 'bg-c-team/10 border-c-team/40' },
   clean: { dot: 'bg-c-clean', chip: 'bg-c-clean/10 border-c-clean/40' },
   team: { dot: 'bg-c-team', chip: 'bg-c-team/10 border-c-team/40' },
 };

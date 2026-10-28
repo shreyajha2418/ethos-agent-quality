@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Agent Quality Program · Ethos',
-  description: 'Agents are accountable only for lapses they caused. Pay follows risk.',
+  description: 'Ethos penalises agents only for lapses they cause, and gives risky agents smaller advances until they prove themselves.',
 };
 
 export const viewport: Viewport = {

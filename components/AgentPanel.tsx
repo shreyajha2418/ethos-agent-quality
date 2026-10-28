@@ -13,13 +13,16 @@ import {
   paceLabel,
   standingLabel,
   upfrontPerPolicy,
-  windowCount,
+  strikeCount,
+  SWITCH_LABEL,
   type Agent,
   type Case,
   type LapseCause,
   type Outcome,
   type StandingState,
+  type SwitchType,
 } from '@/lib/rules';
+import type { TryKind } from '@/lib/store';
 import { CauseTag, Disclosure, Modal, SlideOver, StandingBadge } from './ui';
 
 interface Result {
@@ -74,9 +77,9 @@ export default function AgentPanel({
     );
   }
 
-  function tryIt(kind: 'lapse' | 'clean' | 'replacement', cause?: LapseCause, asked?: boolean) {
+  function tryIt(kind: TryKind, opts?: { cause?: LapseCause; requestedTraining?: boolean; switchType?: SwitchType }) {
     if (!agent) return;
-    const id = addTryCase(agent.id, kind, cause, asked);
+    const id = addTryCase(agent.id, kind, opts);
     if (!id) return;
     setResult(null);
     setCaseId(id);
@@ -215,9 +218,9 @@ function Summary({ agent }: { agent: Agent }) {
           <dd><span className="num font-medium">{formatINR(up.amount)}</span> <span className="block text-xs text-muted">{up.detail}</span></dd>
         </div>
         <div>
-          <dt className="text-xs text-muted">Lapses in window</dt>
-          <dd className="num font-medium">{windowCount(agent.window)} of {PROGRAM.rollingWindow}</dd>
-          {agent.resetUsed && <dd className="text-xs text-muted">Reset used</dd>}
+          <dt className="text-xs text-muted">Strikes (last {PROGRAM.rollingWindow} policies)</dt>
+          <dd className="num font-medium">{strikeCount(agent.window)} of {PROGRAM.rollingWindow}</dd>
+          {agent.resetUsed && <dd className="text-xs text-muted">One reset used</dd>}
         </div>
         <div className="col-span-2 sm:col-span-1">
           <dt className="text-xs text-muted">Earn-back</dt>
@@ -273,13 +276,13 @@ function ReasoningSteps({ c, o, onCause }: { c: Case; o: Outcome; onCause: (caus
       body: (
         <dl className="flex flex-col gap-2">
           <Evidence label="Call transcript">{ev.transcript}</Evidence>
-          <Evidence label="First-payment check">{ev.firstPayment}</Evidence>
-          <Evidence label={`Check-in confidence${ev.confidenceNote ? ` (${ev.confidenceNote})` : ''}`}>
+          {c.kind !== 'request' && <Evidence label="First-payment check">{ev.firstPayment}</Evidence>}
+          {c.kind !== 'request' && <Evidence label={`Check-in confidence${ev.confidenceNote ? ` (${ev.confidenceNote})` : ''}`}>
             <span className="flex items-center gap-2">
               <span className="num">{ev.confidence}/100</span>
               <span className="h-1.5 w-32 overflow-hidden rounded-full bg-line"><span className="block h-full bg-accent" style={{ width: `${ev.confidence}%` }} /></span>
             </span>
-          </Evidence>
+          </Evidence>}
         </dl>
       ),
     },
@@ -371,8 +374,7 @@ function BeforeAfter({ from, to }: { from: StandingState; to: StandingState }) {
 function moneyLine(o: Outcome): string {
   if (o.money.absorbed) return `Ethos absorbs ${formatINR(o.money.absorbed)}. Nothing recovered from the agent.`;
   if (!o.money.ownRecovered) return 'No money changes.';
-  const fee = o.money.fee ? ` (${formatINR(o.money.unearned)} + 10% fee)` : '';
-  return `Recover ${formatINR(o.money.ownRecovered)}${fee} at ${paceLabel(o.money.pace ?? 'normal')}.`;
+  return `Repay ${formatINR(o.money.ownRecovered)} of unearned advance at ${paceLabel(o.money.pace ?? 'current')}.`;
 }
 
 function Effect({ o }: { o: Outcome }) {
@@ -381,11 +383,11 @@ function Effect({ o }: { o: Outcome }) {
       <BeforeAfter from={o.from} to={o.to} />
       <ul className="list-disc space-y-0.5 pl-5 text-[13px]">
         <li>{moneyLine(o)}</li>
-        {o.tag !== 'clean' && o.tag !== 'replacement' && <li>{o.counts ? `Counts on the record${o.resetApplied ? ', then the count resets (once)' : ` (${o.windowCountAfter} of last ${PROGRAM.rollingWindow})`}.` : 'Does not count on the record.'}</li>}
-        {o.notes.filter((n) => !n.startsWith('Lapse count resets')).map((n) => (
+        {o.tag !== 'clean' && o.tag !== 'request' && <li>{o.strike ? `Strike: yes${o.resetApplied ? '; the strike count then resets (once)' : ` (${o.strikesAfter} in the last ${PROGRAM.rollingWindow} policies)`}.` : 'Strike: no.'}</li>}
+        {o.money.movedToSlower > 0 && !o.notes.some((n) => n.startsWith('Existing debt')) && <li>Existing debt moves to the slower pace.</li>}
+        {o.notes.filter((n) => !(o.strike && n.startsWith('Strike count resets'))).map((n) => (
           <li key={n}>{n}</li>
         ))}
-        {o.resetApplied && <li>Lapse count resets after training (once).</li>}
       </ul>
     </div>
   );
@@ -432,7 +434,7 @@ function History({ agent }: { agent: Agent }) {
   return (
     <Disclosure title="History" meta={`${agent.history.length} events`}>
       {rows.length === 0 ? (
-        <p className="text-muted">No lapses or replacements on record.</p>
+        <p className="text-muted">No lapses or policy switches on record.</p>
       ) : (
         <ol className="flex flex-col">
           {rows.map((e) => (
@@ -445,9 +447,9 @@ function History({ agent }: { agent: Agent }) {
                 </span>
                 <span className="text-xs text-muted">{e.note}</span>
               </span>
-              {e.kind === 'lapse' ? (
-                <span className={`whitespace-nowrap rounded px-1.5 text-[11px] font-semibold ${e.counts ? 'bg-terminated/10 text-terminated' : 'bg-sunken text-muted'}`}>
-                  {e.counts ? 'Counts' : 'Doesn’t count'}
+              {e.kind === 'lapse' || e.kind === 'switch' ? (
+                <span className={`whitespace-nowrap rounded px-1.5 text-[11px] font-semibold ${e.strike ? 'bg-terminated/10 text-terminated' : 'bg-sunken text-muted'}`}>
+                  Strike? {e.strike ? 'Yes' : 'No'}
                 </span>
               ) : (
                 <span />
@@ -463,10 +465,9 @@ function History({ agent }: { agent: Agent }) {
 function Money({ agent }: { agent: Agent }) {
   const own = agent.history.filter((e) => e.kind !== 'team-debt');
   const team = agent.history.filter((e) => e.kind === 'team-debt');
-  const unearned = own.reduce((s, e) => s + e.recovered - e.fee, 0);
-  const fees = own.reduce((s, e) => s + e.fee, 0);
+  const unearned = own.reduce((s, e) => s + e.recovered, 0);
   const slower = own.filter((e) => e.pace === 'slower').reduce((s, e) => s + e.recovered, 0);
-  const normal = own.filter((e) => e.pace === 'normal').reduce((s, e) => s + e.recovered, 0);
+  const current = own.filter((e) => e.pace === 'current').reduce((s, e) => s + e.recovered, 0);
   const absorbed = agent.history.reduce((s, e) => s + e.absorbed, 0);
   const teamShare = team.reduce((s, e) => s + e.recovered, 0);
   const row = (k: string, v: React.ReactNode) => (
@@ -476,26 +477,34 @@ function Money({ agent }: { agent: Agent }) {
     </div>
   );
   return (
-    <Disclosure title="Money" meta={formatINR(unearned + fees + teamShare) + ' owed'}>
+    <Disclosure title="Repaying the unearned advance" meta={formatINR(unearned + teamShare) + ' owed'}>
       <dl className="text-[13px]">
         {row('Unearned advance owed', <span className="num">{formatINR(unearned)}</span>)}
-        {row('Fees (10%)', <span className="num">{formatINR(fees)}</span>)}
-        {row('Recovery pace', <span>{formatINR(slower)} at {PROGRAM.slowerRecoveryPct * 100}% · {formatINR(normal)} at {PROGRAM.normalRecoveryPct * 100}% of each payout</span>)}
+        {row('Slower pace (20% of each payout)', <span className="num">{formatINR(slower)}</span>)}
+        {row(`Current pace (${PROGRAM.currentRecoveryPct * 100}% of each payout)`, <span className="num">{formatINR(current)}</span>)}
         {row('Absorbed by Ethos', <span className="num">{formatINR(absorbed)}</span>)}
-        {agent.manager && row('Team debt share', <span><span className="num">{formatINR(teamShare)}</span> at {PROGRAM.slowerRecoveryPct * 100}%</span>)}
+        {agent.manager && row('Team debt share (slower pace)', <span className="num">{formatINR(teamShare)}</span>)}
       </dl>
+      <p className="mt-2 text-xs text-muted">The stage sets the size of future advances. The cause sets how fast the agent repays.</p>
       {agent.manager && (
         <p className="mt-2 text-xs text-muted">
-          Managers carry {PROGRAM.managerTeamDebtShare * 100}% of the team’s new agent-caused debt, earn a share of the team’s clean-policy bonus, and repay at the slower pace.
+          Managers carry {PROGRAM.managerTeamDebtShare * 100}% of the team’s new agent-caused debt, earn a share of the team’s bonus for policies customers keep paying, and repay at the slower pace.
         </p>
       )}
     </Disclosure>
   );
 }
 
-function TryIt({ agent, onAdd }: { agent: Agent; onAdd: (kind: 'lapse' | 'clean' | 'replacement', cause?: LapseCause, asked?: boolean) => void }) {
+function TryIt({
+  agent,
+  onAdd,
+}: {
+  agent: Agent;
+  onAdd: (kind: TryKind, opts?: { cause?: LapseCause; requestedTraining?: boolean; switchType?: SwitchType }) => void;
+}) {
   const [cause, setCauseSel] = useState<LapseCause>('skill');
   const [asked, setAsked] = useState(false);
+  const [switchType, setSwitchType] = useState<SwitchType>('downgrade');
   const off = agent.standing === 'terminated';
   return (
     <Disclosure title="Try it" meta="test the rules">
@@ -517,11 +526,24 @@ function TryIt({ agent, onAdd }: { agent: Agent; onAdd: (kind: 'lapse' | 'clean'
               <input id="try-asked" type="checkbox" checked={asked} onChange={(e) => setAsked(e.target.checked)} />
               Agent asked for training
             </label>
-            <button type="button" className="btn" onClick={() => onAdd('lapse', cause, asked)}>Add lapse</button>
+            <button type="button" className="btn" onClick={() => onAdd('lapse', { cause, requestedTraining: asked })}>Add lapse</button>
+          </div>
+          <div className="flex flex-wrap items-end gap-2 border-t border-line pt-3">
+            <label className="flex flex-col gap-1 text-xs text-muted">
+              Switch type
+              <select id="try-switch" className="field" value={switchType} onChange={(e) => setSwitchType(e.target.value as SwitchType)}>
+                {(['downgrade', 'replacement'] as const).map((k) => (
+                  <option key={k} value={k}>{SWITCH_LABEL[k]}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="btn" onClick={() => onAdd('switch', { switchType })}>Add policy switch</button>
           </div>
           <div className="flex flex-wrap gap-2 border-t border-line pt-3">
             <button type="button" className="btn" onClick={() => onAdd('clean')}>Add clean policy</button>
-            <button type="button" className="btn" onClick={() => onAdd('replacement')}>Add replacement</button>
+            {agent.standing !== 'training' && (
+              <button type="button" className="btn" onClick={() => onAdd('request')}>Agent asks for training</button>
+            )}
           </div>
         </div>
       )}

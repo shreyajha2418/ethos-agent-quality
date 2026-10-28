@@ -3,14 +3,14 @@
 import { AnimatePresence, motion, MotionConfig } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { CAUSE_INFO, formatINR, totals, type EventTag } from '@/lib/rules';
+import { CAUSE_INFO, KEY_RULE, formatINR, totals, type EventTag } from '@/lib/rules';
 import LadderBoard from './LadderBoard';
 import AgentPanel from './AgentPanel';
 import HowItWorks from './HowItWorks';
 import ActivityLog from './ActivityLog';
 import { CauseTag } from './ui';
 
-const LEGEND: EventTag[] = ['ethos', 'nofault', 'inconclusive', 'skill', 'oversold', 'ignored', 'replacement'];
+const LEGEND: EventTag[] = ['ethos', 'nofault', 'inconclusive', 'skill', 'oversold', 'ignored', 'switch'];
 
 function Stat({ label, value, dot }: { label: string; value: string; dot?: string }) {
   return (
@@ -65,7 +65,7 @@ export default function Dashboard() {
           <div className="min-w-0">
             <p className="eyebrow">Ethos · Operations</p>
             <h1 className="text-[22px] font-bold tracking-tight">Agent Quality Program</h1>
-            <p className="text-muted">Accountable only for lapses they caused. Pay follows risk.</p>
+            <p className="max-w-2xl text-muted">Ethos penalises agents only for lapses they cause, and gives risky agents smaller advances until they prove themselves.</p>
           </div>
           <nav className="flex flex-wrap gap-2" aria-label="Demo controls">
             <button type="button" className="btn" onClick={() => setHow(true)}>How it works</button>
@@ -139,7 +139,10 @@ export default function Dashboard() {
 
         <section aria-labelledby="board-h">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <h2 id="board-h" className="text-base font-semibold">Standing ladder</h2>
+            <div className="min-w-0">
+              <h2 id="board-h" className="text-base font-semibold">Standing ladder</h2>
+              <p className="text-xs text-muted">{KEY_RULE}</p>
+            </div>
             <div className="flex flex-wrap items-center gap-1.5" aria-label="Cause colours">
               {LEGEND.map((tag) => (
                 <CauseTag key={tag} tag={tag} />
@@ -182,7 +185,7 @@ export default function Dashboard() {
 function tagDot(tag: EventTag) {
   const map: Record<EventTag, string> = {
     ethos: 'bg-c-ethos', nofault: 'bg-c-nofault', skill: 'bg-c-skill', oversold: 'bg-c-oversold', ignored: 'bg-c-ignored',
-    inconclusive: 'bg-c-inconclusive', replacement: 'bg-c-replacement', clean: 'bg-c-clean', team: 'bg-c-team',
+    inconclusive: 'bg-c-inconclusive', switch: 'bg-c-replacement', clean: 'bg-c-clean', team: 'bg-c-team', request: 'bg-c-team',
   };
   return map[tag];
 }
