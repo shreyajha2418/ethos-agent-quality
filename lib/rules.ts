@@ -79,6 +79,8 @@ export interface Agent {
   firstName: string;
   roleTag: string;
   profile: string;
+  /** Possessive pronoun for review text ("her one reset"); defaults to "their". */
+  possessive?: string;
   policies: number;
   standing: Standing;
   /** True while in Training because the agent asked for it. */
@@ -572,7 +574,7 @@ function evaluateSwitch(agent: Agent, c: SwitchCase): Outcome {
       ? `Billing and payments were normal. Low check-in confidence triggered a downgrade alert, and ${first} moved the customer to a cheaper policy.`
       : `Billing and payments were normal. ${n === 1 ? 'The customer' : `${n} customers`} cancelled and bought a new policy from ${first}.`,
   };
-  o.rule = `A policy switch is not a strike and does not change ${first}’s stage: the old policy’s unearned advance is recovered at the current pace, and the new policy pays only ${formatINR(SWITCH_ADVANCE)} (3 months), then quarterly.`;
+  o.rule = `A policy switch is not a strike and does not change ${first}’s stage: the old policy’s unearned advance is recovered at the current pace, and the switched policy pays only ${formatINR(SWITCH_ADVANCE)} (3 months), then quarterly.`;
   for (const it of c.items) {
     const u = unearnedAdvance(it);
     o.money.unearned += u;
@@ -586,14 +588,14 @@ function evaluateSwitch(agent: Agent, c: SwitchCase): Outcome {
       absorbed: 0,
       recovered: u,
       pace: 'current',
-      note: `${SWITCH_LABEL[it.type]}. Policy-switch rule applied: ${formatINR(u)} unearned on ${it.oldPolicy} recovered; ${it.newPolicy} pays ${formatINR(SWITCH_ADVANCE)} (3 months), then quarterly.`,
+      note: `${SWITCH_LABEL[it.type]}. Policy-switch rule applied: ${formatINR(u)} unearned on ${it.oldPolicy} recovered at the current pace (recovery, not a penalty); switched policy ${it.newPolicy} pays ${formatINR(SWITCH_ADVANCE)} upfront (3 months), rest paid quarterly as the customer keeps paying.`,
     });
   }
   o.money.ownRecovered = o.money.unearned;
   o.money.pace = 'current';
   o.next.policies = agent.policies + n;
   o.notes.push('No strike; stage unchanged.');
-  o.notes.push(`New ${n === 1 ? 'policy pays' : 'policies pay'} ${formatINR(SWITCH_ADVANCE)} (3 months), then quarterly. A switch never earns a fresh full advance.`);
+  o.notes.push(`Switched ${n === 1 ? 'policy pays' : 'policies pay'} ${formatINR(SWITCH_ADVANCE)} (3 months), then quarterly. A switch never earns a fresh full advance.`);
   return o;
 }
 

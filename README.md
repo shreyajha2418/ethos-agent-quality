@@ -19,12 +19,13 @@ npm run build      # production build
 
 ## Try the demo
 
-1. Click **Review** on each of the four incoming cases. Watch the five reasoning steps, click **Apply course correction**, confirm, then **Notify agent** and **Send**.
+1. Click **Review** on each of the five incoming cases. Watch the five reasoning steps, click **Apply course correction** (when the agent's stage changes) or **Apply rule** (when it doesn't), confirm, then **Notify agent** and **Send**.
 2. Expected results:
-   - **Priya**: Good standing → Training (at her request). Keeps the full ₹10,000 advance; both lapses repaid at the slower pace; uses her one strike-count reset.
-   - **Marcus**: Good standing → Watch. ₹5,000 (6-month) advances until his next 3 policies stay clean; unearned advance repaid at the current pace; team debt share ₹20,000 at the slower pace; keeps manager role.
+   - **Priya**: 2 skill-gap lapses in her first 3 policies, and she asked for training. Good standing → Training (requested). Keeps the full ₹10,000 advance; both lapses repaid at the slower pace; strikes reset after training (her one reset).
+   - **Marcus**: earlier oversold strike, then 3 clean policies earned him back to Good standing. A new oversold lapse makes 2 strikes in his last 5 policies: Good standing → Watch. ₹5,000 (6-month) advances; current-pace repayment; team debt share ₹20,000 at the slower pace; keeps manager role.
    - **Dana**: billing bug found → Ethos fault. Stays in Good standing; no strikes; Ethos absorbs ₹26,667.
-   - **Leo**: policy-switch rule applied to all 3 replacements. Stays in Good standing; each new policy pays ₹2,500 (3 months), then quarterly.
+   - **Leo**: policy-switch rule applied to all 3 replacements. Stays in Good standing; switched policies pay ₹2,500 (3 months), then quarterly; genuinely new sales still pay ₹10,000.
+   - **Rohan**: starts on Watch with 2 strikes. A third (oversold) lapse in 5 policies: Watch → Training (mandatory). ₹5,000 advances continue; current-pace repayment; final warning: one more oversold lapse after training means Termination.
 3. Open any agent and use **Try it** to test edge cases: add a lapse with any cause, add a clean policy, add a policy switch (cheaper policy or replacement), or have the agent ask for training. For example, add oversold lapses to Marcus until he reaches Training, then one more terminates him; or add a skill-gap lapse to Dana and then 3 clean policies to earn back Good standing.
 
 ## Project layout
@@ -35,6 +36,7 @@ components/          Dashboard, LadderBoard, AgentCard, AgentPanel, HowItWorks, 
 data/seed.ts         The four agents, their incoming cases and sample evidence
 lib/rules.ts         All program rules and tunable numbers (pure functions, no UI)
 lib/rules.test.ts    Unit tests for every rule and the four seed outcomes
+lib/review.ts        Effect lines, pop-up titles and buttons (shared by the review step, pop-up and result)
 lib/messages.ts      Text of the agent notification
 lib/store.ts         Zustand store with localStorage persistence
 ```

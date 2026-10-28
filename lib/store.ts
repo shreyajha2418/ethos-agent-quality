@@ -41,7 +41,7 @@ function seedState() {
   return {
     agents: seedAgents(),
     cases: seedCases(),
-    log: [{ id: 1, text: 'Demo loaded with 4 incoming cases.' }],
+    log: [{ id: 1, text: 'Demo loaded with 5 incoming cases.' }],
     seq: 2,
   };
 }
@@ -184,7 +184,7 @@ export const useStore = create<AppState>()(
       reset: () => set(seedState()),
     }),
     {
-      name: 'ethos-agent-quality-v2',
+      name: 'ethos-agent-quality-v3',
       storage: createJSONStorage(() => safeStorage),
       skipHydration: true,
       partialize: (s) => ({ agents: s.agents, cases: s.cases, log: s.log, seq: s.seq }),

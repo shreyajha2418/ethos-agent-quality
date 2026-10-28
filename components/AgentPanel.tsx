@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { notifyMessage } from '@/lib/messages';
+import { effectLines, reviewAction, stageChanged } from '@/lib/review';
 import {
   CAUSE_INFO,
   LAPSE_CAUSES,
@@ -28,6 +29,7 @@ import { CauseTag, Disclosure, Modal, SlideOver, StandingBadge } from './ui';
 interface Result {
   outcome: Outcome;
   c: Case;
+  agentBefore: Agent;
   agentAfter: Agent;
   notified: boolean;
 }
@@ -69,7 +71,7 @@ export default function AgentPanel({
     setConfirmOpen(false);
     if (!o) return;
     const after = useStore.getState().agents[agent.id];
-    setResult({ outcome: o, c: selected, agentAfter: after, notified: false });
+    setResult({ outcome: o, c: selected, agentBefore: agent, agentAfter: after, notified: false });
     onToast(
       o.from.standing === o.to.standing && o.from.voluntary === o.to.voluntary
         ? `${agent.firstName} stays in ${standingLabel(o.to)}`
@@ -146,12 +148,15 @@ export default function AgentPanel({
                     )}
                     <ReasoningSteps
                       key={`${selected.id}:${selected.kind === 'lapse' ? selected.cause : ''}`}
+                      agent={agent}
                       c={selected}
                       o={outcome}
                       onCause={(cause) => setCause(selected.id, cause)}
                     />
                     <div className="flex flex-wrap gap-2 border-t border-line pt-4">
-                      <button type="button" className="btn btn-primary" onClick={() => setConfirmOpen(true)}>Apply course correction</button>
+                      <button type="button" className="btn btn-primary" onClick={() => setConfirmOpen(true)}>
+                        {reviewAction(agent, selected, outcome).button}
+                      </button>
                       <button type="button" className="btn" onClick={() => setAppealOpen(true)}>Appeal</button>
                     </div>
                   </motion.section>
@@ -169,7 +174,7 @@ export default function AgentPanel({
           </div>
 
           {selected && outcome && (
-            <ConfirmModal open={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={confirmApply} agent={agent} o={outcome} />
+            <ConfirmModal open={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={confirmApply} agent={agent} c={selected} o={outcome} />
           )}
           {result && (
             <NotifyModal
@@ -247,7 +252,7 @@ function Summary({ agent }: { agent: Agent }) {
 
 /* ---------------------------------------------------------------- */
 
-function ReasoningSteps({ c, o, onCause }: { c: Case; o: Outcome; onCause: (cause: LapseCause) => void }) {
+function ReasoningSteps({ agent, c, o, onCause }: { agent: Agent; c: Case; o: Outcome; onCause: (cause: LapseCause) => void }) {
   const reduce = useReducedMotion();
   const [shown, setShown] = useState(reduce ? 5 : 1);
   useEffect(() => {
@@ -305,7 +310,7 @@ function ReasoningSteps({ c, o, onCause }: { c: Case; o: Outcome; onCause: (caus
       ),
     },
     { title: 'Rule applied', body: <p className="rounded-lg bg-sunken px-3 py-2">{o.rule}</p> },
-    { title: 'Effect', body: <Effect o={o} /> },
+    { title: 'Effect', body: <Effect agent={agent} c={c} o={o} /> },
   ];
 
   return (
@@ -354,10 +359,12 @@ function Evidence({ label, children }: { label: string; children: React.ReactNod
 function BeforeAfter({ from, to }: { from: StandingState; to: StandingState }) {
   const f = upfrontPerPolicy(from);
   const t = upfrontPerPolicy(to);
+  const keptAdvance = to.standing === 'training' && to.voluntary && from.standing !== 'training' && f.amount === t.amount;
   const side = (label: string, s: StandingState, u: typeof f, after: boolean) => (
     <div className={`flex min-w-0 flex-col gap-1 rounded-lg border p-3 ${after ? 'border-accent/60 bg-accent/5' : 'border-line'}`}>
       <span className="eyebrow">{label}</span>
       <StandingBadge s={s} />
+      {after && keptAdvance && <span className="text-xs font-medium">Training (requested): no change to advance</span>}
       <span className="num text-lg font-medium">{formatINR(u.amount)}</span>
       <span className="text-xs text-muted">per new policy · {u.detail}</span>
     </div>
@@ -371,24 +378,21 @@ function BeforeAfter({ from, to }: { from: StandingState; to: StandingState }) {
   );
 }
 
-function moneyLine(o: Outcome): string {
-  if (o.money.absorbed) return `Ethos absorbs ${formatINR(o.money.absorbed)}. Nothing recovered from the agent.`;
-  if (!o.money.ownRecovered) return 'No money changes.';
-  return `Repay ${formatINR(o.money.ownRecovered)} of unearned advance at ${paceLabel(o.money.pace ?? 'current')}.`;
+function EffectList({ lines }: { lines: string[] }) {
+  return (
+    <ul className="list-disc space-y-1 pl-5 text-[13px]">
+      {lines.map((l) => (
+        <li key={l}>{l}</li>
+      ))}
+    </ul>
+  );
 }
 
-function Effect({ o }: { o: Outcome }) {
+function Effect({ agent, c, o }: { agent: Agent; c: Case; o: Outcome }) {
   return (
     <div className="flex flex-col gap-2">
       <BeforeAfter from={o.from} to={o.to} />
-      <ul className="list-disc space-y-0.5 pl-5 text-[13px]">
-        <li>{moneyLine(o)}</li>
-        {o.tag !== 'clean' && o.tag !== 'request' && <li>{o.strike ? `Strike: yes${o.resetApplied ? '; the strike count then resets (once)' : ` (${o.strikesAfter} in the last ${PROGRAM.rollingWindow} policies)`}.` : 'Strike: no.'}</li>}
-        {o.money.movedToSlower > 0 && !o.notes.some((n) => n.startsWith('Existing debt')) && <li>Existing debt moves to the slower pace.</li>}
-        {o.notes.filter((n) => !(o.strike && n.startsWith('Strike count resets'))).map((n) => (
-          <li key={n}>{n}</li>
-        ))}
-      </ul>
+      <EffectList lines={effectLines(agent, c, o)} />
     </div>
   );
 }
@@ -397,7 +401,7 @@ function Effect({ o }: { o: Outcome }) {
 
 function ResultBlock({ result, onNotify, onAppeal, onDone, hasMore }: { result: Result; onNotify: () => void; onAppeal: () => void; onDone: () => void; hasMore: boolean }) {
   const o = result.outcome;
-  const moved = o.from.standing !== o.to.standing || o.from.voluntary !== o.to.voluntary;
+  const moved = stageChanged(o);
   return (
     <motion.section
       initial={{ opacity: 0, y: 8 }}
@@ -407,13 +411,13 @@ function ResultBlock({ result, onNotify, onAppeal, onDone, hasMore }: { result: 
       className="flex flex-col gap-3 rounded-xl border border-accent/50 bg-surface p-4"
     >
       <div>
-        <p className="eyebrow text-accent">Course correction applied</p>
+        <p className="eyebrow text-accent">{moved ? 'Course correction applied' : 'Rule applied'}</p>
         <h3 className="text-base font-semibold">
           {moved ? `${result.agentAfter.firstName} moved to ${standingLabel(o.to)}` : `${result.agentAfter.firstName} stays in ${standingLabel(o.to)}`}
         </h3>
       </div>
       <BeforeAfter from={o.from} to={o.to} />
-      <p className="text-[13px] text-muted">{moneyLine(o)}{o.money.teamShare ? ` Team debt share ${formatINR(o.money.teamShare)} at ${paceLabel('slower')}.` : ''}</p>
+      <EffectList lines={effectLines(result.agentBefore, result.c, o)} />
       <div className="flex flex-wrap gap-2">
         {result.notified ? (
           <span className="inline-flex items-center gap-1.5 rounded-lg bg-good/10 px-3 py-1.5 text-[13px] font-medium text-good">✓ Agent notified</span>
@@ -553,28 +557,21 @@ function TryIt({
 
 /* ---------------------------------------------------------------- */
 
-function ConfirmModal({ open, onClose, onConfirm, agent, o }: { open: boolean; onClose: () => void; onConfirm: () => void; agent: Agent; o: Outcome }) {
-  const f = upfrontPerPolicy(o.from);
-  const t = upfrontPerPolicy(o.to);
+function ConfirmModal({ open, onClose, onConfirm, agent, c, o }: { open: boolean; onClose: () => void; onConfirm: () => void; agent: Agent; c: Case; o: Outcome }) {
+  const action = reviewAction(agent, c, o);
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title={`Apply course correction for ${agent.firstName}?`}
+      title={action.title}
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button type="button" className="btn btn-primary" onClick={onConfirm} data-autofocus>Confirm</button>
+          <button type="button" className="btn btn-primary" onClick={onConfirm} data-autofocus>{action.button}</button>
         </>
       }
     >
-      <p className="mb-1">
-        <strong>{standingLabel(o.from)} → {standingLabel(o.to)}</strong>, upfront per new policy {formatINR(f.amount)} → {formatINR(t.amount)}.
-      </p>
-      <p className="text-muted">
-        {moneyLine(o)}
-        {o.money.teamShare ? ` Team debt share ${formatINR(o.money.teamShare)} at the slower pace.` : ''}
-      </p>
+      <EffectList lines={effectLines(agent, c, o)} />
     </Modal>
   );
 }

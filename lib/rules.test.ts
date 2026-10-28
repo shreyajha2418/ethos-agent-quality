@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { seedAgents, seedCases } from '@/data/seed';
+import { notifyMessage } from './messages';
+import { effectLines, reviewAction } from './review';
 import {
   STAGE_ADVANCE,
   SWITCH_ADVANCE,
@@ -239,54 +241,143 @@ describe('managers', () => {
   });
 });
 
-describe('12. seed cases land as in Part C', () => {
+describe('seed cases', () => {
   const agents = seedAgents();
   const cases = seedCases();
-  const outcome = (id: string) => evaluateCase(agents[id], cases.find((x) => x.agentId === id)!);
+  const caseFor = (id: string) => cases.find((x) => x.agentId === id)!;
+  const outcome = (id: string) => evaluateCase(agents[id], caseFor(id));
 
-  it('all four start in Good standing with one case each', () => {
-    expect(Object.values(agents).every((a) => a.standing === 'good')).toBe(true);
-    expect(cases.map((c) => c.agentId).sort()).toEqual(['dana', 'leo', 'marcus', 'priya']);
+  it('five agents, one incoming case each; Rohan starts on Watch, the rest in Good standing', () => {
+    expect(cases.map((c) => c.agentId).sort()).toEqual(['dana', 'leo', 'marcus', 'priya', 'rohan']);
+    for (const id of ['priya', 'marcus', 'dana', 'leo']) expect(agents[id].standing).toBe('good');
+    expect(agents.rohan.standing).toBe('watch');
   });
-  it('Priya: Training at her request, full ₹10,000, both lapses at slower pace, uses her one reset', () => {
+
+  it('Priya: 0 → 2 strikes, asked for training → Training (requested), ₹10,000, slower pace, reset used', () => {
+    expect(strikeCount(agents.priya.window)).toBe(0);
+    expect(agents.priya.history).toHaveLength(0);
     const o = outcome('priya');
+    expect(o.strikesAfter).toBe(2);
     expect(o.to).toEqual({ standing: 'training', voluntary: true });
     expect(upfrontPerPolicy(o.to).amount).toBe(10000);
     expect(o.money.pace).toBe('slower');
     expect(o.resetApplied).toBe(true);
     const after = applyOutcome(agents.priya, o);
+    expect(after.resetUsed).toBe(true);
+    expect(strikeCount(after.window)).toBe(0);
     const lapses = after.history.filter((e) => e.kind === 'lapse');
     expect(lapses).toHaveLength(2);
-    expect(lapses.every((e) => e.pace === 'slower')).toBe(true);
+    expect(lapses.every((e) => e.strike && e.pace === 'slower')).toBe(true);
   });
-  it('Marcus: Watch, ₹5,000 advances, no fee, ₹20,000 team share at slower pace, keeps role', () => {
+
+  it('Marcus: strike → 3 clean (Good standing) → oversold → Watch with 2 strikes in window', () => {
+    const m = agents.marcus;
+    expect(m.history.map((e) => e.kind)).toEqual(['lapse', 'clean', 'clean', 'clean']);
+    expect(m.history[3].note).toContain('Earned back to Good standing after 3 clean policies.');
+    expect(strikeCount(m.window)).toBe(1);
     const o = outcome('marcus');
     expect(o.to.standing).toBe('watch');
+    expect(o.strikesAfter).toBe(2);
     expect(upfrontPerPolicy(o.to).amount).toBe(5000);
     expect(o.money.ownRecovered).toBe(5833);
+    expect(o.money.pace).toBe('current');
     expect(o.money.teamShare).toBe(20000);
     expect(o.notes).toContain('Keeps manager role.');
   });
+
   it('Dana: Ethos fault, stays Good standing, no strikes, Ethos absorbs', () => {
     const o = outcome('dana');
     expect(o.billingCheck.bugFound).toBe(true);
     expect(o.to.standing).toBe('good');
     expect(o.events.every((e) => !e.strike)).toBe(true);
     expect(o.money.absorbed).toBe(26667);
-    expect(o.money.ownRecovered).toBe(0);
   });
-  it('Leo: stays Good standing, policy-switch rule on all 3, new policies ₹2,500', () => {
+
+  it('Leo: switches keep Good standing, no strike, ₹2,500 on switched policies, ₹10,000 on new sales', () => {
     const o = outcome('leo');
     expect(o.to.standing).toBe('good');
     expect(o.strike).toBe(false);
     expect(o.events).toHaveLength(3);
     expect(o.events.every((e) => e.note.includes('Policy-switch rule applied') && e.note.includes('₹2,500'))).toBe(true);
+    expect(upfrontPerPolicy(o.to).amount).toBe(10000);
     expect(o.money.ownRecovered).toBe(11667);
+    const lines = effectLines(agents.leo, caseFor('leo'), o);
+    expect(lines).toEqual([
+      'Standing: Good standing (unchanged). No strike.',
+      'Genuinely new sales: ₹10,000 upfront (unchanged).',
+      'Switched policies: ₹2,500 upfront each (3 months), rest paid quarterly as the customer keeps paying. A switch never earns a fresh full advance.',
+      'Unearned part of the 3 old advances (₹11,667) recovered at the current pace (50% of each payout). This is recovery, not a penalty.',
+    ]);
+    const msg = notifyMessage(applyOutcome(agents.leo, o), caseFor('leo'), o);
+    expect(msg).not.toMatch(/new policies pay ₹2,500/i);
+    expect(msg).toContain('Switched policies pay ₹2,500');
   });
-  it('totals add up after all four are applied', () => {
-    const after = Object.values(agents).map((a) => applyOutcome(a, evaluateCase(a, cases.find((x) => x.agentId === a.id)!)));
+
+  it('Rohan: Watch with 2 strikes → oversold → Training (mandatory), ₹5,000, current pace, final warning', () => {
+    const r = agents.rohan;
+    expect(strikeCount(r.window)).toBe(2);
+    expect(cardStatus(r)).toBe('Earn-back 1 of 3');
+    expect(upfrontPerPolicy(r).amount).toBe(5000);
+    const o = outcome('rohan');
+    expect(o.strikesAfter).toBe(3);
+    expect(o.to).toEqual({ standing: 'training', voluntary: false });
+    expect(upfrontPerPolicy(o.to).amount).toBe(5000);
+    expect(o.money.pace).toBe('current');
+    expect(o.resetApplied).toBe(true);
+    expect(o.next.finalWarning).toBe(true);
+    const trained = applyOutcome(r, o);
+    const msg = notifyMessage(trained, caseFor('rohan'), o);
+    expect(msg).toContain('That’s your third lapse in your last 5 policies, so you’re moving to Training.');
+    expect(msg).toContain('This is your last chance: one more oversold lapse after training would end your contract.');
+    // Earlier debts keep their own pace.
+    expect(trained.history.find((e) => e.policy === 'R-0001')!.pace).toBe('current');
+    expect(trained.history.find((e) => e.policy === 'R-0003')!.pace).toBe('slower');
+    // One more oversold lapse → Termination.
+    expect(run(trained, lapse('oversold')).standing).toBe('terminated');
+    // Or 3 clean after training → Good standing.
+    expect(run(trained, clean(), clean(), clean()).standing).toBe('good');
+  });
+
+  it('totals add up after all five are applied', () => {
+    const after = Object.values(agents).map((a) => applyOutcome(a, evaluateCase(a, caseFor(a.id))));
     const t = totals(after);
     expect(t.absorbed).toBe(26667);
-    expect(t.recovering).toBe(9167 + 5000 + 8333 + 5833 + 20000 + 11667);
+    // Priya 9,167 + 8,333; Marcus 5,000 + 5,833 + 20,000; Leo 11,667; Rohan 7,500 + 3,333 + 3,333.
+    expect(t.recovering).toBe(17500 + 5000 + 5833 + 20000 + 11667 + 7500 + 3333 + 3333);
+  });
+});
+
+describe('review pop-up wording', () => {
+  const agents = seedAgents();
+  const cases = seedCases();
+  const action = (id: string) => {
+    const c = cases.find((x) => x.agentId === id)!;
+    return reviewAction(agents[id], c, evaluateCase(agents[id], c));
+  };
+  it('"Apply course correction" only when the stage changes', () => {
+    expect(action('priya')).toMatchObject({ title: 'Apply course correction for Priya?', button: 'Apply course correction' });
+    expect(action('marcus').button).toBe('Apply course correction');
+    expect(action('rohan')).toMatchObject({ title: 'Apply course correction for Rohan?', button: 'Apply course correction' });
+  });
+  it('"Apply rule" with the rule named when the stage does not change', () => {
+    expect(action('leo')).toMatchObject({ title: 'Apply policy-switch rule for Leo?', button: 'Apply rule' });
+    expect(action('dana')).toMatchObject({ title: 'Confirm Ethos-fault ruling for Dana?', button: 'Apply rule' });
+    const watch = run(agent(), lapse('oversold'));
+    expect(reviewAction(watch, clean(), evaluateCase(watch, clean())).button).toBe('Apply rule');
+  });
+  it('Priya and Rohan effect lines match the brief', () => {
+    const p = cases.find((x) => x.agentId === 'priya')!;
+    const pl = effectLines(agents.priya, p, evaluateCase(agents.priya, p));
+    expect(pl).toContain('Upfront per new policy: ₹10,000 → ₹10,000 (no change to advance).');
+    expect(pl).toContain('Repaying: unearned advances on her 2 lapsed policies (₹17,500) at the slower pace (20% of each payout).');
+    expect(pl).toContain('Strikes: 2 of 5; reset to 0 after training (her one reset).');
+    expect(pl).toContain('Way back: finish training, then next 3 policies stay clean → Good standing.');
+    const r = cases.find((x) => x.agentId === 'rohan')!;
+    const rl = effectLines(agents.rohan, r, evaluateCase(agents.rohan, r));
+    expect(rl).toContain('Watch → Training (mandatory: 3 strikes in 5 policies).');
+    expect(rl).toContain('Upfront per new policy: ₹5,000 → ₹5,000 (6 months).');
+    expect(rl).toContain('Repay the unearned advance on this policy (₹3,333) at 50% of each payout (current pace).');
+    expect(rl).toContain('Final warning: one more oversold lapse after training means termination.');
+    expect(rl).toContain('Way back: finish training, then next 3 policies stay clean → Good standing.');
   });
 });

@@ -76,7 +76,7 @@ export default function Dashboard() {
               onClick={() => {
                 setPanel(null);
                 reset();
-                setToast('Demo reset to the four seed cases');
+                setToast('Demo reset to the five seed cases');
               }}
             >
               Reset demo
