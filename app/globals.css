@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Colour tokens as RGB triplets so Tailwind opacity modifiers work. */
+:root {
+  --bg: 244 246 248;
+  --surface: 255 255 255;
+  --sunken: 236 240 243;
+  --ink: 20 32 42;
+  --muted: 86 101 112;
+  --line: 216 224 229;
+  --accent: 29 90 128;
+  --accent-ink: 255 255 255;
+  --good: 29 122 87;
+  --watch: 158 99 0;
+  --training: 59 84 176;
+  --terminated: 163 36 59;
+  --c-ethos: 108 120 129;
+  --c-nofault: 44 138 76;
+  --c-skill: 200 138 0;
+  --c-oversold: 201 50 61;
+  --c-ignored: 210 98 42;
+  --c-inconclusive: 84 104 130;
+  --c-replacement: 122 78 192;
+  --c-clean: 20 128 128;
+  --c-team: 74 97 112;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: 14 21 26;
+    --surface: 21 32 39;
+    --sunken: 28 42 51;
+    --ink: 226 234 238;
+    --muted: 150 167 176;
+    --line: 42 58 68;
+    --accent: 121 180 220;
+    --accent-ink: 11 23 32;
+    --good: 76 197 151;
+    --watch: 227 168 58;
+    --training: 142 162 242;
+    --terminated: 240 122 141;
+    --c-ethos: 154 166 174;
+    --c-nofault: 92 196 126;
+    --c-skill: 229 178 58;
+    --c-oversold: 240 99 108;
+    --c-ignored: 240 140 85;
+    --c-inconclusive: 148 163 190;
+    --c-replacement: 179 145 240;
+    --c-clean: 80 200 200;
+    --c-team: 143 167 182;
+    color-scheme: dark;
+  }
+}
+
+html, body { background: rgb(var(--bg)); color: rgb(var(--ink)); }
+body { font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { text-wrap: balance; }
+:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 2px; border-radius: 6px; }
+
+@layer components {
+  .btn { @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] font-medium text-ink transition-colors hover:bg-sunken disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-primary { @apply border-accent bg-accent text-accent-ink hover:bg-accent hover:brightness-110; }
+  .btn-sm { @apply px-2.5 py-1 text-xs; }
+  .num { @apply font-mono tabular-nums; }
+  .eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-muted; }
+  .field { @apply rounded-lg border border-line bg-surface px-2 py-1.5 text-[13px] text-ink; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
