@@ -106,7 +106,7 @@ export function notifyMessage(agent: Agent, c: Case, o: Outcome): string {
     const adv = advanceSentence(o);
     const slower = o.money.pace === 'slower';
     const amount = formatINR(o.money.ownRecovered);
-    const repay = n === 1 ? `the unearned part of this advance (${amount})` : `the unearned part of the lapsed advances (${amount})`;
+    const repay = n === 1 ? `the unearned part of this advance (${amount})` : `the unearned advances on your ${n} lapsed policies (${amount})`;
     if (o.money.absorbed) {
       S.push(`${adv.endsWith('.') ? adv : `${adv}.`} Ethos covers the ${formatINR(o.money.absorbed)}; you repay nothing.`);
     } else if (o.money.ownRecovered) {

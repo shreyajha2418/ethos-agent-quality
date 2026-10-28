@@ -267,6 +267,12 @@ describe('seed cases', () => {
     expect(strikeCount(after.window)).toBe(0);
     const lapses = after.history.filter((e) => e.kind === 'lapse');
     expect(lapses).toHaveLength(2);
+    // Pop-up, Effect step and result card share effectLines; the notification must match.
+    const lines = effectLines(agents.priya, caseFor('priya'), o).join('\n');
+    const msg = notifyMessage(after, caseFor('priya'), o);
+    expect(lines).toContain('Repaying: unearned advances on her 2 lapsed policies (₹17,500) at the slower pace (20% of each payout).');
+    expect(msg).toContain('The unearned advances on your 2 lapsed policies (₹17,500) will be recovered slowly, at 20% of each payout.');
+    expect(lines + msg).not.toContain('8,333');
     expect(lapses.every((e) => e.strike && e.pace === 'slower')).toBe(true);
   });
 
