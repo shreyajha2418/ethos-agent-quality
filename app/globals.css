@@ -25,6 +25,8 @@
   --c-replacement: 122 78 192;
   --c-clean: 20 128 128;
   --c-team: 74 97 112;
+  --font-sans: 'IBM Plex Sans';
+  --font-mono: 'IBM Plex Mono';
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
